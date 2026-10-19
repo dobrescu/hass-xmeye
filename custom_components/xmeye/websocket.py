@@ -55,7 +55,13 @@ def _require(hass: HomeAssistant, entry_id: str) -> XmeyeCoordinator:
 
 @callback
 def async_register_websocket_api(hass: HomeAssistant) -> None:
-    """Register the panel commands, idempotently."""
+    """Register the panel commands, idempotently.
+
+    Anything that reads the recorder's configuration, writes it, reboots it or
+    reads its log is for administrators only: a section can hold passwords and
+    user hashes, and a write can take the recorder off the network. The live
+    wall, the archive and PTZ stay open to every user the panel is shown to.
+    """
     if hass.data.get(f"{DOMAIN}_ws_registered"):
         return
     hass.data[f"{DOMAIN}_ws_registered"] = True
@@ -162,6 +168,7 @@ async def ws_ptz(
     connection.send_result(msg["id"], {"hold_repeat": HOLD_REPEAT})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/config_set",
@@ -210,6 +217,7 @@ async def ws_config_set(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): f"{DOMAIN}/reboot", vol.Required("entry_id"): str}
 )
@@ -235,6 +243,7 @@ async def ws_reboot(
     connection.send_result(msg["id"], {"rebooting": True})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/report",
@@ -516,6 +525,7 @@ async def ws_recordings(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {vol.Required("type"): f"{DOMAIN}/config_tree", vol.Required("entry_id"): str}
 )
@@ -544,6 +554,7 @@ async def ws_config_tree(
     )
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/config",
@@ -568,6 +579,7 @@ async def ws_config_get(
     connection.send_result(msg["id"], {"section": msg["section"], "value": mask(value)})
 
 
+@websocket_api.require_admin
 @websocket_api.websocket_command(
     {
         vol.Required("type"): f"{DOMAIN}/log",

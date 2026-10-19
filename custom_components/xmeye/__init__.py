@@ -10,6 +10,7 @@ from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.typing import ConfigType
 
+from . import debuglog
 from .const import (
     CONF_ENABLE_PANEL,
     DOMAIN,
@@ -39,6 +40,7 @@ type XmeyeConfigEntry = ConfigEntry[XmeyeCoordinator]
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """One-time setup shared by every recorder."""
     hass.data.setdefault(DOMAIN, {})
+    await debuglog.async_setup(hass)
     async_register_websocket_api(hass)
     async_register_http(hass)
     await async_setup_services(hass)
@@ -113,6 +115,11 @@ async def _async_register_panel(hass: HomeAssistant) -> None:
             module_url=f"{PANEL_STATIC_PATH}/xmeye-panel.js?v={version}",
             sidebar_title=PANEL_TITLE,
             sidebar_icon=PANEL_ICON,
+            # Open to every user, because watching the cameras and the archive
+            # is what a household's other members open it for. Administration
+            # is closed where it matters, on the server: the configuration,
+            # log, report and reboot commands require an administrator, and
+            # the panel shows their tabs only to one.
             require_admin=False,
             embed_iframe=False,
         )

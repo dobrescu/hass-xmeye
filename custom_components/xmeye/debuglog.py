@@ -42,14 +42,16 @@ STORE = f"{DOMAIN}_debuglog"
 class DebugLog:
     """Appends lines from either side, on one clock."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, *, enabled: bool = False) -> None:
         self.hass = hass
         self.path = Path(hass.config.path(LOG_NAME))
         #: The switch outlives a restart. Half the faults worth recording are
         #: the ones that need Home Assistant restarted to provoke, and having to
-        #: turn the log back on afterwards means missing exactly those.
-        self.marker = Path(hass.config.path(f"{LOG_NAME}.on"))
-        self.enabled = self.marker.exists()
+        #: turn the log back on afterwards means missing exactly those. Whether
+        #: it is there is asked once, off the event loop, by async_setup — never
+        #: here, since a log can be built from inside the loop.
+        self.marker = marker_path(hass)
+        self.enabled = enabled
         #: Everything is timed from here, so web and back share an origin rather
         #: than two clocks that agree only to the second. Both forms are kept:
         #: monotonic for the server's own events, because it cannot be moved by
@@ -185,9 +187,22 @@ class DebugLog:
             self.enabled = False
 
 
+def marker_path(hass: HomeAssistant) -> Path:
+    """The file whose presence keeps the log switched on across restarts."""
+    return Path(hass.config.path(f"{LOG_NAME}.on"))
+
+
+async def async_setup(hass: HomeAssistant) -> None:
+    """Build the log once, reading its switch in the executor."""
+    enabled = await hass.async_add_executor_job(marker_path(hass).exists)
+    hass.data[STORE] = DebugLog(hass, enabled=enabled)
+
+
 def get(hass: HomeAssistant) -> DebugLog:
     log = hass.data.get(STORE)
     if log is None:
+        # Only before setup, which builds it; switched off rather than asking
+        # the disk from wherever this happens to be called.
         log = DebugLog(hass)
         hass.data[STORE] = log
     return log

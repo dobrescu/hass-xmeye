@@ -183,6 +183,11 @@ const channelsIcon = () =>
   ` font-weight="700" letter-spacing="-0.2"` +
   ` font-family="system-ui, -apple-system, Segoe UI, Roboto, sans-serif">CH</text></svg>`;
 
+//: Tabs that administer the recorder: its configuration, its settings, its log
+//: and the developer report. The integration answers their commands for
+//: administrators only, so nobody else is shown them.
+const ADMIN_TABS = ["config", "settings", "log", "debug"];
+
 //: Preset slots on the pad. The recorder takes up to 255; eight is what fits a
 //: quarter tile and what a camera watching one yard actually needs.
 const PTZ_PRESETS = 8;
@@ -2051,19 +2056,27 @@ class XmeyePanel extends HTMLElement {
   _template() {
     if (this._loading && !this._detail) return this._shell(`<div class="empty">${t("Loading…")}</div>`);
     if (this._error && !this._detail)
-      return this._shell(`<div class="empty error">${this._error}</div>`);
+      return this._shell(`<div class="empty error">${escapeHtml(this._error)}</div>`);
     if (!this._detail) return this._shell(`<div class="empty">${t("No data")}</div>`);
 
-    const tabs = {
-      overview: this._overview(),
-      channels: this._channels(),
-      archive: this._archive(),
-      config: this._config(),
-      log: this._logView(),
-      settings: this._settingsView(),
-      debug: this._debugView(),
+    // Built only for the tab on screen, and the administration tabs only for
+    // an administrator: the integration refuses their commands to anyone else.
+    const views = {
+      overview: () => this._overview(),
+      channels: () => this._channels(),
+      archive: () => this._archive(),
+      config: () => this._config(),
+      log: () => this._logView(),
+      settings: () => this._settingsView(),
+      debug: () => this._debugView(),
     };
-    return this._shell(tabs[this._tab] || tabs.overview);
+    if (!this._isAdmin() && ADMIN_TABS.includes(this._tab)) this._tab = "overview";
+    return this._shell((views[this._tab] || views.overview)());
+  }
+
+  /** Whether the person viewing may administer the recorder. */
+  _isAdmin() {
+    return Boolean(this._hass && this._hass.user && this._hass.user.is_admin);
   }
 
   _shell(body) {
@@ -2076,7 +2089,7 @@ class XmeyePanel extends HTMLElement {
       ["settings", t("Settings")],
       ["log", t("Log")],
       ["debug", t("Report")],
-    ];
+    ].filter(([key]) => this._isAdmin() || !ADMIN_TABS.includes(key));
     const picker =
       this._devices.length > 1
         ? `<select id="device">${this._devices
@@ -2084,7 +2097,7 @@ class XmeyePanel extends HTMLElement {
               (dev) =>
                 `<option value="${dev.entry_id}" ${
                   dev.entry_id === this._entryId ? "selected" : ""
-                }>${dev.title}</option>`
+                }>${escapeHtml(dev.title)}</option>`
             )
             .join("")}</select>`
         : "";
@@ -2321,7 +2334,7 @@ class XmeyePanel extends HTMLElement {
                   data-pick="${channel.index}" title="${state}"></button>
           <span class="pick-grip"></span>
           <span class="pick-num">${channel.index + 1}</span>
-          <span class="pick-name" title="${channel.name}">${channel.name}</span>
+          <span class="pick-name" title="${escapeHtml(channel.name)}">${escapeHtml(channel.name)}</span>
           <select class="pick-stream" data-stream="${channel.index}"
                   title="${t("Stream of this camera on the wall")}">
             ${WALL_STREAMS.map(
@@ -2516,7 +2529,7 @@ class XmeyePanel extends HTMLElement {
            style="${this._cellSpan(layout, position)}">
         <canvas data-wall="${channel.index}"></canvas>
         <div class="cell-overlay">
-          <div class="cell-name">${channel.index + 1}. ${channel.name}</div>
+          <div class="cell-name">${channel.index + 1}. ${escapeHtml(channel.name)}</div>
           <div class="badges">${this._badges(channel)}</div>
         </div>
         <div class="cell-foot" data-field="wall${channel.index}">
@@ -3146,13 +3159,13 @@ class XmeyePanel extends HTMLElement {
           ${
             picture
               ? `<img src="${picture}" data-entity="${channel.entity_id}"
-                      alt="${channel.name}" loading="lazy">`
+                      alt="${escapeHtml(channel.name)}" loading="lazy">`
               : `<div class="noimage">${channel.online ? t("No frame") : t("Offline")}</div>`
           }
           <div class="badges">${this._badges(channel)}</div>
         </div>
         <div class="tile-body">
-          <div class="tile-name">${channel.name}</div>
+          <div class="tile-name">${escapeHtml(channel.name)}</div>
           <div class="tile-meta" data-field="meta">${
             channel.resolution || channel.status
           } · ${t("{kbps} kbit/s", { kbps: channel.bitrate })}</div>
@@ -3174,9 +3187,9 @@ class XmeyePanel extends HTMLElement {
               (c) => `
             <tr class="${c.online ? "" : "dim"}">
               <td>${c.index + 1}</td>
-              <td>${c.name}</td>
-              <td>${c.online ? t("Connected") : c.status}</td>
-              <td>${c.resolution || "—"}</td>
+              <td>${escapeHtml(c.name)}</td>
+              <td>${c.online ? t("Connected") : escapeHtml(c.status)}</td>
+              <td>${escapeHtml(c.resolution || "—")}</td>
               <td>${c.bitrate || 0}</td>
               <td>${c.recording ? t("yes") : "—"}</td>
               <td>${c.motion ? t("yes") : "—"}</td>
@@ -3194,7 +3207,7 @@ class XmeyePanel extends HTMLElement {
 
     let body = `<div class="empty">${t("Pick a day and press Show.")}</div>`;
     if (rec && rec.loading) body = `<div class="empty">${t("Looking for recordings…")}</div>`;
-    else if (rec && rec.error) body = `<div class="empty error">${rec.error}</div>`;
+    else if (rec && rec.error) body = `<div class="empty error">${escapeHtml(rec.error)}</div>`;
     else if (rec && rec.recordings) body = this._timeline(rec);
 
     // Yesterday and tomorrow are one button each, because stepping a day is
@@ -3207,7 +3220,7 @@ class XmeyePanel extends HTMLElement {
               (c) =>
                 `<option value="${c.index}" ${
                   c.index === this._selectedChannel ? "selected" : ""
-                }>${c.index + 1}. ${c.name}</option>`
+                }>${c.index + 1}. ${escapeHtml(c.name)}</option>`
             )
             .join("")}
         </select>
@@ -3620,9 +3633,9 @@ class XmeyePanel extends HTMLElement {
         `<div class="block" style="left:${left.toFixed(4)}%;` +
           `width:${width.toFixed(4)}%;background:${color}" title="${fmtTime(
             record.begin
-          )} → ${fmtTime(record.end)} · ${t(
+          )} → ${fmtTime(record.end)} · ${escapeHtml(t(
             EVENT_LABELS[record.event] || record.event
-          )} · ${fmtBytes(record.size)}"></div>`
+          ))} · ${fmtBytes(record.size)}"></div>`
       );
     }
     blocks.innerHTML = drawn.join("");
@@ -3777,9 +3790,9 @@ class XmeyePanel extends HTMLElement {
               <td>${fmtClock(r.end)}</td>
               <td><span class="chip small"><i style="background:${
                 EVENT_COLORS[r.event] || "var(--primary-color)"
-              }"></i>${t(EVENT_LABELS[r.event] || r.event)}</span></td>
+              }"></i>${escapeHtml(t(EVENT_LABELS[r.event] || r.event))}</span></td>
               <td>${fmtBytes(r.size)}</td>
-              <td class="mono">${r.name.split("/").pop()}</td>
+              <td class="mono">${escapeHtml(r.name.split("/").pop())}</td>
             </tr>`
             )
             .join("")}
@@ -3796,7 +3809,7 @@ class XmeyePanel extends HTMLElement {
     const tree = this._configTree;
     if (!tree) return `<div class="empty"><button class="primary" id="loadconfig">${t("Read the configuration")}</button></div>`;
     if (tree.loading) return `<div class="empty">${t("Reading the configuration tree…")}</div>`;
-    if (tree.error) return `<div class="empty error">${tree.error}</div>`;
+    if (tree.error) return `<div class="empty error">${escapeHtml(tree.error)}</div>`;
 
     const roots = Object.entries(tree.roots)
       .map(
@@ -3821,7 +3834,7 @@ class XmeyePanel extends HTMLElement {
     if (this._configValue) {
       if (this._configValue.loading) viewer = `<div class="empty">${t("Reading…")}</div>`;
       else if (this._configValue.error)
-        viewer = `<div class="empty error">${this._configValue.error}</div>`;
+        viewer = `<div class="empty error">${escapeHtml(this._configValue.error)}</div>`;
       else
         viewer = `<pre class="json">${escapeHtml(
           JSON.stringify(this._configValue, null, 2)
@@ -4979,7 +4992,7 @@ class XmeyePanel extends HTMLElement {
     const log = this._log;
     if (!log) return `<div class="empty"><button class="primary" id="loadlog">${t("Read the log")}</button></div>`;
     if (log.loading) return `<div class="empty">${t("Reading the log…")}</div>`;
-    if (log.error) return `<div class="empty error">${log.error}</div>`;
+    if (log.error) return `<div class="empty error">${escapeHtml(log.error)}</div>`;
     if (!log.entries.length) return `<div class="empty">${t("The log is empty.")}</div>`;
 
     return `
@@ -4992,8 +5005,8 @@ class XmeyePanel extends HTMLElement {
               (e) => `
             <tr>
               <td class="mono">${fmtTime(e.time)}</td>
-              <td>${e.type}</td>
-              <td>${e.user || "—"}</td>
+              <td>${escapeHtml(e.type)}</td>
+              <td>${escapeHtml(e.user || "—")}</td>
               <td class="mono">${escapeHtml(e.data || "")}</td>
             </tr>`
             )
@@ -5015,7 +5028,7 @@ class XmeyePanel extends HTMLElement {
       <div class="overlay" id="overlay">
         <div class="overlay-box">
           <div class="overlay-head">
-            <span>${channel.name}</span>
+            <span>${escapeHtml(channel.name)}</span>
             <div class="overlay-controls">
               <select id="player" title="${
                 insecure
@@ -5169,7 +5182,7 @@ class XmeyePanel extends HTMLElement {
 
     lines.push(`player: ${this._player}, stream: ${this._liveStream}`);
     if (channel) {
-      lines.push(`channel ${channel.index + 1} (${channel.name}), ${channel.resolution}`);
+      lines.push(`channel ${channel.index + 1} (${escapeHtml(channel.name)}), ${channel.resolution}`);
       lines.push(`entities: ${JSON.stringify(channel.entity_ids)}`);
     }
     // WebCodecs needs a secure context, so a recorder opened over plain http on

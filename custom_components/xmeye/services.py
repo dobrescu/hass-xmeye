@@ -15,6 +15,7 @@ from homeassistant.core import (
 )
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.service import async_register_admin_service
 
 from .const import (
     ATTR_AUDIO_FILE,
@@ -39,6 +40,7 @@ from .const import (
     SERVICE_TALK,
 )
 from .coordinator import XmeyeCoordinator
+from .masking import mask
 from .xmeyelib import ArchiveStream, TalkStream, XmeyeError
 
 _LOGGER = logging.getLogger(__name__)
@@ -156,7 +158,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         coordinator = _coordinator(hass, call)
         entry = coordinator.config_entry
         target = Path(hass.config.path("media"), "xmeye")
-        target.mkdir(parents=True, exist_ok=True)
+        await hass.async_add_executor_job(lambda: target.mkdir(parents=True, exist_ok=True))
 
         begin, end = _naive(call.data[ATTR_START]), _naive(call.data[ATTR_END])
         stem = f"ch{call.data[ATTR_CHANNEL]}_{begin:%Y%m%d_%H%M%S}"
@@ -200,7 +202,9 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 )
         except XmeyeError as err:
             raise HomeAssistantError(f"Could not read the section: {err}") from err
-        return {"section": call.data[ATTR_SECTION], "value": value}
+        # Masked as the panel's reads are: a section can hold camera and mail
+        # passwords, and the user hashes, which log in as well as a password.
+        return {"section": call.data[ATTR_SECTION], "value": mask(value)}
 
     async def handle_set_config(call: ServiceCall) -> None:
         coordinator = _coordinator(hass, call)
@@ -250,17 +254,20 @@ async def async_setup_services(hass: HomeAssistant) -> None:
         schema=DOWNLOAD_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
-    hass.services.async_register(
+    # Reading and writing the recorder's configuration, and speaking through its
+    # speaker, are administration: only an administrator may call them.
+    async_register_admin_service(
+        hass,
         DOMAIN,
         SERVICE_GET_CONFIG,
         handle_get_config,
         schema=GET_CONFIG_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
-    hass.services.async_register(
-        DOMAIN, SERVICE_SET_CONFIG, handle_set_config, schema=SET_CONFIG_SCHEMA
+    async_register_admin_service(
+        hass, DOMAIN, SERVICE_SET_CONFIG, handle_set_config, schema=SET_CONFIG_SCHEMA
     )
-    hass.services.async_register(DOMAIN, SERVICE_TALK, handle_talk, schema=TALK_SCHEMA)
+    async_register_admin_service(hass, DOMAIN, SERVICE_TALK, handle_talk, schema=TALK_SCHEMA)
 
 
 async def async_unload_services(hass: HomeAssistant) -> None:
