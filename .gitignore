@@ -25,3 +25,6 @@ capabilities.json
 !docs/images/*.jpg
 
 .DS_Store
+
+# The panel tests' DOM, installed with npm install --prefix tests/panel
+tests/panel/node_modules/

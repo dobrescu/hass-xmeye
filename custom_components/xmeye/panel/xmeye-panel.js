@@ -1345,7 +1345,64 @@ class XmeyePanel extends HTMLElement {
     }
   }
 
+  /**
+   * Show another recorder.
+   *
+   * Everything on screen was read from the recorder it belongs to: the wall's
+   * socket is signed for it, the settings form holds its values, the archive
+   * its recordings. Kept across a switch, the wall went on showing the old
+   * recorder's cameras under the new one's name until a camera was opened, and
+   * saving a settings page wrote the old recorder's values into the new one.
+   * So all of it goes, and the tab on screen is read again from the new one.
+   */
+  async _switchRecorder(entryId) {
+    if (entryId === this._entryId) return;
+    if (this._tab === "settings" && !this._settingsMayLeave()) {
+      // The edits stay, and so does the recorder they belong to.
+      this._render();
+      return;
+    }
+    this._stopWall();
+    this._stopPlayback();
+    if (this._live !== null) {
+      this._teardownPlayer();
+      clearInterval(this._osdTimer);
+      this._osdTimer = null;
+      this._live = null;
+      this._osd = null;
+      this._liveSound = false;
+    }
+    this._entryId = entryId;
+    // Without the old details the redraw shows the new recorder loading,
+    // rather than the old one's tiles dialled on the new one's socket.
+    this._detail = null;
+    this._soundChannel = null;
+    this._wallPage = 0;
+    this._playback = null;
+    this._recordings = null;
+    this._configTree = null;
+    this._configSection = null;
+    this._configValue = null;
+    this._log = null;
+    this._report = null;
+    this._settings = null;
+    this._settingsEdits = {};
+    this._settingsRejected = {};
+    this._settingsNote = null;
+    this._sched = null;
+    this._settingsCopyTo.clear();
+    this._settingsCopyOpen = false;
+    this._settingsChannel = 0;
+    // A different recorder may have different defaults; let them apply again.
+    this._defaultsApplied = false;
+    await this._loadDetail();
+    if (entryId !== this._entryId || !this._detail) return;
+    if (this._tab === "settings") this._loadSettings();
+    else if (this._tab === "archive") this._loadRecordings();
+  }
+
   async _loadDetail() {
+    const entryId = this._entryId;
     this._loading = true;
     // The first of these draws the shell with no channels at all, so the wall it
     // paints is empty — the tiles arrive on the second one. That pair is worth
@@ -1354,7 +1411,10 @@ class XmeyePanel extends HTMLElement {
     this._renderReason = "details loading";
     this._render();
     try {
-      this._detail = await this._ws({ type: "xmeye/device", entry_id: this._entryId });
+      const detail = await this._ws({ type: "xmeye/device", entry_id: entryId });
+      // Another recorder was picked while this one answered.
+      if (entryId !== this._entryId) return;
+      this._detail = detail;
       this._error = null;
       // Apply the player/stream defaults from the options flow once, on the
       // first load of this device — not on every refresh, or a manual switch
@@ -1372,6 +1432,7 @@ class XmeyePanel extends HTMLElement {
         this._selectedChannel = enabled[0].index;
       }
     } catch (err) {
+      if (entryId !== this._entryId) return;
       this._error = err.message || String(err);
     }
     this._loading = false;
@@ -1381,8 +1442,12 @@ class XmeyePanel extends HTMLElement {
 
   async _refresh() {
     if (!this._entryId || this._loading) return;
+    const entryId = this._entryId;
     try {
-      this._detail = await this._ws({ type: "xmeye/device", entry_id: this._entryId });
+      const detail = await this._ws({ type: "xmeye/device", entry_id: entryId });
+      // A poll sent before a switch must not bring the old recorder back.
+      if (entryId !== this._entryId) return;
+      this._detail = detail;
       this._renderIfIdle();
     } catch (err) {
       /* a transient outage; it will show on the next cycle */
@@ -1435,6 +1500,7 @@ class XmeyePanel extends HTMLElement {
   }
 
   async _loadRecordings() {
+    const entryId = this._entryId;
     const day = this._recordingsDay;
     const channel = this._selectedChannel;
     this._recordings = { loading: true };
@@ -1443,17 +1509,21 @@ class XmeyePanel extends HTMLElement {
     this._span = { scale: 1, start: 0 };
     this._stopPlayback();
     this._render();
+    let recordings;
     try {
-      this._recordings = await this._ws({
+      recordings = await this._ws({
         type: "xmeye/recordings",
-        entry_id: this._entryId,
+        entry_id: entryId,
         channel,
         start: `${day}T00:00:00`,
         end: `${day}T23:59:59`,
       });
     } catch (err) {
-      this._recordings = { error: err.message || String(err) };
+      recordings = { error: err.message || String(err) };
     }
+    // The old recorder's day, answered after a switch, belongs to nothing here.
+    if (entryId !== this._entryId) return;
+    this._recordings = recordings;
     this._render();
     // A query that came back while the user had already moved on belongs to
     // nothing on screen, so it must not seize the player.
@@ -2803,7 +2873,10 @@ class XmeyePanel extends HTMLElement {
       this._updateWallCell(channel, { error: `${what} · ${next}` });
     };
 
+    const entryId = this._entryId;
     const address = await this._socketAddress();
+    // The wall was stopped for another recorder while this address was signed.
+    if (entryId !== this._entryId) return;
     if (!address) {
       canvases.forEach((canvas) =>
         this._updateWallCell(Number(canvas.dataset.wall), { error: t("no address for the stream") })
@@ -4840,17 +4913,22 @@ class XmeyePanel extends HTMLElement {
     this._settingsCopyTo.clear();
     this._settingsCopyOpen = false;
     this._render();
+    const entryId = this._entryId;
+    let settings;
     try {
       const reply = await this._ws({
         type: "xmeye/config",
-        entry_id: this._entryId,
+        entry_id: entryId,
         section: page.section,
       });
-      this._settings = { section: page.section, value: reply.value };
-      if (page.status) this._settings.status = await this._settingsStatus(page);
+      settings = { section: page.section, value: reply.value };
+      if (page.status) settings.status = await this._settingsStatus(page);
     } catch (err) {
-      this._settings = { section: page.section, error: err.message || String(err) };
+      settings = { section: page.section, error: err.message || String(err) };
     }
+    // Another recorder's values in this form would be saved into this one.
+    if (entryId !== this._entryId) return;
+    this._settings = settings;
     this._render();
   }
 
@@ -5356,16 +5434,7 @@ class XmeyePanel extends HTMLElement {
     );
 
     const device = root.getElementById("device");
-    if (device)
-      device.addEventListener("change", () => {
-        this._entryId = device.value;
-        this._recordings = null;
-        this._configTree = null;
-        this._log = null;
-        // A different recorder may have different defaults; let them apply again.
-        this._defaultsApplied = false;
-        this._loadDetail();
-      });
+    if (device) device.addEventListener("change", () => this._switchRecorder(device.value));
 
     const channel = root.getElementById("channel");
     if (channel)

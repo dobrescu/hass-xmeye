@@ -14,6 +14,8 @@ jobs:
         with:
           python-version: "3.13"
       - run: pip install -e ".[dev]"
+      # A DOM for the panel tests that drive the whole panel.
+      - run: npm ci --prefix tests/panel --no-audit --no-fund
       # The default suite is offline: a fake device and captured frame headers.
       - run: pytest
       # The vendored copy inside the integration must match src/xmeye.

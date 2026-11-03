@@ -1,0 +1,8 @@
+{
+  "name": "xmeye-panel-tests",
+  "private": true,
+  "description": "A DOM for the panel tests that need one: npm install --prefix tests/panel",
+  "dependencies": {
+    "jsdom": "26.1.0"
+  }
+}
