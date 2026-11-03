@@ -8,6 +8,7 @@ from pathlib import Path
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.typing import ConfigType
 
 from . import debuglog
@@ -20,6 +21,7 @@ from .const import (
     PANEL_URL,
 )
 from .coordinator import XmeyeCoordinator, async_create_client
+from .entity import recorder_device_info
 from .http import async_register_http
 from .services import async_setup_services, async_unload_services
 from .websocket import async_register_websocket_api
@@ -55,6 +57,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: XmeyeConfigEntry) -> boo
 
     entry.runtime_data = coordinator
     hass.data[DOMAIN][entry.entry_id] = coordinator
+
+    # The recorder goes into the registry before its platforms, so that each
+    # channel device can name it as its parent by id.
+    recorder = dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id, **recorder_device_info(coordinator)
+    )
+    coordinator.recorder_device_id = recorder.id
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options))

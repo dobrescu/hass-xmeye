@@ -114,6 +114,8 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
         self.lock = asyncio.Lock()
         #: Pan, tilt and zoom from the panel, on a connection of its own.
         self.ptz = PtzControl(dict(entry.data))
+        #: The recorder's device in the registry, the parent of every channel.
+        self.recorder_device_id: str | None = None
 
     @property
     def host(self) -> str:
