@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from xmeye.models import (
+    ChannelStatus,
     DeviceInfo,
     Disk,
     NetworkInfo,
@@ -132,6 +133,14 @@ def test_work_state_decodes_motion_bitmask() -> None:
     assert state.motion_channels() == [0, 2]
     assert [c.index for c in state.channels if c.recording] == [0, 2]
     assert state.channels[0].bitrate_kbps == 3252
+
+
+def test_channel_online_when_connected_or_streaming() -> None:
+    assert ChannelStatus.from_raw(0, {"Status": "Connected"}).online
+    analog = ChannelStatus.from_raw(1, {"Status": "NotConnected"})
+    assert not analog.online
+    analog.streaming = True
+    assert analog.online
 
 
 def test_disk_drops_empty_partitions() -> None:

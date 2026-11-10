@@ -157,6 +157,10 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
 
         state = await self.client.work_state()
         channels = await self.client.channel_statuses()
+        for channel in channels:
+            if channel.index < len(state.channels):
+                activity = state.channels[channel.index]
+                channel.streaming = activity.bitrate_kbps > 0 or activity.recording
         self._flag_new_channels(channels)
         disks = await self.client.storage()
         device_time = await self.client.get_time()

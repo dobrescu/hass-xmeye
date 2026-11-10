@@ -31,10 +31,14 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     coordinator: XmeyeCoordinator = hass.data[DOMAIN][entry.entry_id]
+    # Coordinator entities are not polled, so async_update only runs here.
     async_add_entities(
-        XmeyeDetectSwitch(coordinator, channel, key, section, translation_key)
-        for channel in coordinator.enabled_channels
-        for key, (section, translation_key) in DETECT_SECTIONS.items()
+        (
+            XmeyeDetectSwitch(coordinator, channel, key, section, translation_key)
+            for channel in coordinator.enabled_channels
+            for key, (section, translation_key) in DETECT_SECTIONS.items()
+        ),
+        update_before_add=True,
     )
 
 

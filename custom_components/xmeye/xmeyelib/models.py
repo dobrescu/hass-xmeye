@@ -136,6 +136,8 @@ class ChannelStatus:
     current_resolution: str = ""
     max_resolution: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
+    #: Set from ``WorkState``: the channel has bitrate or is recording.
+    streaming: bool = False
 
     @classmethod
     def from_raw(cls, index: int, data: dict[str, Any]) -> ChannelStatus:
@@ -150,7 +152,8 @@ class ChannelStatus:
 
     @property
     def online(self) -> bool:
-        return self.status == "Connected"
+        # Analog/AHD DVRs report their channels as not "Connected" while they stream and record.
+        return self.status == "Connected" or self.streaming
 
     @property
     def configured(self) -> bool:
