@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_CHANNELS,
@@ -48,6 +49,7 @@ class XmeyeData:
     state: WorkState | None = None
     disks: list[Disk] = field(default_factory=list)
     device_time: datetime | None = None
+    booted_at: datetime | None = None
     archive_from: datetime | None = None
     archive_to: datetime | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
@@ -148,19 +150,24 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
 
         if refresh_slow:
             # Model, channel names and capabilities only change after a firmware update.
+            device = await self.client.device_info()
+            # Uptime only refreshes with the slow data and counts whole minutes, so pin
+            # the boot time here: recomputed per poll it would change on every update.
+            booted_at = (
+                (dt_util.utcnow() - device.uptime).replace(second=0, microsecond=0)
+                if device.uptime
+                else None
+            )
             self._static = {
-                "device": await self.client.device_info(),
+                "device": device,
                 "titles": await self.client.channel_titles(),
                 "capabilities": await self.client.capabilities(),
+                "booted_at": booted_at,
             }
             self._slow_due = now + SLOW_REFRESH
 
         state = await self.client.work_state()
-        channels = await self.client.channel_statuses()
-        for channel in channels:
-            if channel.index < len(state.channels):
-                activity = state.channels[channel.index]
-                channel.streaming = activity.bitrate_kbps > 0 or activity.recording
+        channels = await self.client.channel_statuses(self._static["device"], state)
         self._flag_new_channels(channels)
         disks = await self.client.storage()
         device_time = await self.client.get_time()
@@ -172,6 +179,7 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
             device=self._static["device"],
             titles=self._static["titles"],
             capabilities=self._static["capabilities"],
+            booted_at=self._static["booted_at"],
             channels=channels,
             state=state,
             disks=disks,

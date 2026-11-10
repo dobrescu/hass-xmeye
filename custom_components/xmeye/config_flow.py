@@ -94,7 +94,7 @@ async def _async_probe(data: dict[str, Any]) -> dict[str, Any]:
     try:
         await client.login()
         info = await client.device_info()
-        channels = await client.channel_statuses()
+        channels = await client.channel_statuses(info)
     finally:
         await client.close()
     return {

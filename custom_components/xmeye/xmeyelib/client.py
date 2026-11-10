@@ -319,8 +319,20 @@ class XmeyeClient:
         reply = await self.command(Msg.CONFIG_CHANNELTITLE_GET, {"Name": "ChannelTitle"})
         return list(reply.get("ChannelTitle", []) or [])
 
-    async def channel_statuses(self) -> list[ChannelStatus]:
-        """Connection state of each channel (NVR and HVR only)."""
+    async def channel_statuses(
+        self, info: DeviceInfo, state: WorkState | None = None
+    ) -> list[ChannelStatus]:
+        """Connection state of each channel.
+
+        IP channels report it in ``NetWork.ChnStatus``. Analog inputs do not:
+        there the table is empty, so the video-loss alarm in ``state`` decides.
+        """
+        if info.analog_only:
+            state = state or await self.work_state()
+            return [
+                ChannelStatus.from_video_signal(i, not state.video_loss >> i & 1)
+                for i in range(info.channels)
+            ]
         raw = await self.get_config("NetWork.ChnStatus", check=False)
         if not isinstance(raw, list):
             return []
@@ -328,7 +340,7 @@ class XmeyeClient:
 
     async def online_channels(self) -> list[ChannelStatus]:
         """Only channels in the ``Connected`` state."""
-        return [c for c in await self.channel_statuses() if c.online]
+        return [c for c in await self.channel_statuses(await self.device_info()) if c.online]
 
     async def get_time(self) -> datetime | None:
         """The recorder's system time."""
@@ -566,7 +578,7 @@ class XmeyeClient:
         state = await self.work_state()
         disks = await self.storage()
         titles = await self.channel_titles()
-        statuses = await self.channel_statuses()
+        statuses = await self.channel_statuses(info, state)
         oldest, newest = await self.recording_range()
         return {
             "model": info.hardware,

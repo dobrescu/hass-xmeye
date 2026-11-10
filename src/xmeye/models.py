@@ -89,6 +89,8 @@ class DeviceInfo:
     serial_number: str = ""
     device_type: int = 0
     channels: int = 0
+    #: No IP channels: every input is wired, and ``NetWork.ChnStatus`` says nothing about it.
+    analog_only: bool = False
     extra_channels: int = 0
     video_out_channels: int = 0
     audio_in_channels: int = 0
@@ -110,6 +112,7 @@ class DeviceInfo:
             device_type=data.get("DeviceType", 0),
             # HVR and NVR report the channel count in DigChannel, DVR in VideoInChannel
             channels=data.get("DigChannel") or data.get("VideoInChannel") or 0,
+            analog_only=not data.get("DigChannel"),
             extra_channels=data.get("ExtraChannel", 0),
             video_out_channels=data.get("VideoOutChannel", 0),
             audio_in_channels=data.get("AudioInChannel", 0),
@@ -117,7 +120,7 @@ class DeviceInfo:
             talk_out_channels=data.get("TalkOutChannel", 0),
             alarm_in_channels=data.get("AlarmInChannel", 0),
             alarm_out_channels=data.get("AlarmOutChannel", 0),
-            uptime=timedelta(seconds=runtime) if runtime else None,
+            uptime=timedelta(minutes=runtime) if runtime else None,
             raw=data,
         )
 
@@ -136,8 +139,6 @@ class ChannelStatus:
     current_resolution: str = ""
     max_resolution: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
-    #: Set from ``WorkState``: the channel has bitrate or is recording.
-    streaming: bool = False
 
     @classmethod
     def from_raw(cls, index: int, data: dict[str, Any]) -> ChannelStatus:
@@ -150,10 +151,14 @@ class ChannelStatus:
             raw=data,
         )
 
+    @classmethod
+    def from_video_signal(cls, index: int, signal: bool) -> ChannelStatus:
+        """An analog input, judged by the recorder's video-loss alarm."""
+        return cls(index=index, status="Connected" if signal else "VideoLoss")
+
     @property
     def online(self) -> bool:
-        # Analog/AHD DVRs report their channels as not "Connected" while they stream and record.
-        return self.status == "Connected" or self.streaming
+        return self.status == "Connected"
 
     @property
     def configured(self) -> bool:

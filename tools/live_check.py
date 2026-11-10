@@ -75,7 +75,8 @@ async def main() -> int:
     if titles := await check("channel_titles", client.channel_titles()):
         print(f"  {len(titles)} channel titles, first: {titles[:4]}\n")
 
-    if statuses := await check("channel_statuses", client.channel_statuses()):
+    info = await client.device_info()
+    if statuses := await check("channel_statuses", client.channel_statuses(info)):
         online = [c for c in statuses if c.online]
         print(f"  {len(statuses)} channels, {len(online)} online")
         for c in online:

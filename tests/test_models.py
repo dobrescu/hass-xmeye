@@ -100,13 +100,15 @@ def test_device_info_parsing() -> None:
     assert info.hardware == "NBD8008R-U"
     assert info.serial_number == "0123456789abcdef"
     assert info.channels == 32  # an NVR reports its channels in DigChannel
-    assert info.uptime == timedelta(seconds=0x124E52)
+    assert info.uptime == timedelta(minutes=0x124E52)
+    assert not info.analog_only
     assert info.build_time == datetime(2022, 8, 29, 15, 9, 23)
     assert info.supports_talk is True
 
 
 def test_device_info_falls_back_to_analog_channel_count() -> None:
     info = DeviceInfo.from_raw({**SYSTEM_INFO, "DigChannel": 0, "VideoInChannel": 16})
+    assert info.analog_only
     assert info.channels == 16
 
 
@@ -135,12 +137,9 @@ def test_work_state_decodes_motion_bitmask() -> None:
     assert state.channels[0].bitrate_kbps == 3252
 
 
-def test_channel_online_when_connected_or_streaming() -> None:
-    assert ChannelStatus.from_raw(0, {"Status": "Connected"}).online
-    analog = ChannelStatus.from_raw(1, {"Status": "NotConnected"})
-    assert not analog.online
-    analog.streaming = True
-    assert analog.online
+def test_analog_channel_online_follows_video_signal() -> None:
+    assert ChannelStatus.from_video_signal(0, True).online
+    assert not ChannelStatus.from_video_signal(1, False).online
 
 
 def test_disk_drops_empty_partitions() -> None:

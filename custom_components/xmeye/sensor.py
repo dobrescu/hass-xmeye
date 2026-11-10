@@ -52,9 +52,7 @@ RECORDER_SENSORS: tuple[XmeyeSensorDescription, ...] = (
         translation_key="uptime",
         device_class=SensorDeviceClass.TIMESTAMP,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value=lambda d: (
-            dt_util.utcnow() - d.device.uptime if d.device.uptime else None
-        ),
+        value=lambda d: d.booted_at,
     ),
     XmeyeSensorDescription(
         key="total_bitrate",
