@@ -60,6 +60,13 @@ const volumeLabel = (position) => {
 
 const nativePlayerSupported = () => nativeSupported;
 
+/** A channel's state in words, falling back to the recorder's own status. */
+const channelState = (channel) => {
+  if (channel.online) return t("Connected");
+  if (channel.video_loss) return t("Video loss");
+  return escapeHtml(channel.status);
+};
+
 //: Wall layouts as found on ordinary recorders. Six and eight are the classic
 //: hero arrangements: one large tile with smaller ones around it.
 const LAYOUTS = [
@@ -3240,7 +3247,7 @@ class XmeyePanel extends HTMLElement {
         <div class="tile-body">
           <div class="tile-name">${escapeHtml(channel.name)}</div>
           <div class="tile-meta" data-field="meta">${
-            channel.resolution || channel.status
+            channel.resolution || channelState(channel)
           } · ${t("{kbps} kbit/s", { kbps: channel.bitrate })}</div>
         </div>
       </div>`;
@@ -3261,7 +3268,7 @@ class XmeyePanel extends HTMLElement {
             <tr class="${c.online ? "" : "dim"}">
               <td>${c.index + 1}</td>
               <td>${escapeHtml(c.name)}</td>
-              <td>${c.online ? t("Connected") : escapeHtml(c.status)}</td>
+              <td>${channelState(c)}</td>
               <td>${escapeHtml(c.resolution || "—")}</td>
               <td>${c.bitrate || 0}</td>
               <td>${c.recording ? t("yes") : "—"}</td>

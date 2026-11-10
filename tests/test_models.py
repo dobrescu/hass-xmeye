@@ -16,6 +16,7 @@ from xmeye.models import (
     NetworkInfo,
     RecordFile,
     WorkState,
+    boot_time,
     format_hex_ip,
     parse_hex_int,
     parse_hex_ip,
@@ -140,6 +141,34 @@ def test_work_state_decodes_motion_bitmask() -> None:
 def test_analog_channel_online_follows_video_signal() -> None:
     assert ChannelStatus.from_video_signal(0, True).online
     assert not ChannelStatus.from_video_signal(1, False).online
+
+
+def test_blank_system_info_is_not_analog() -> None:
+    assert not DeviceInfo.from_raw({}).analog_only
+
+
+def test_boot_time_holds_across_minute_jitter() -> None:
+    uptime = timedelta(minutes=112692)
+    now = datetime(2026, 11, 10, 9, 40, 54)
+    first = boot_time(uptime, now)
+    assert first.second == 0
+
+    # The counter ticks whole minutes, so later reads land up to a minute either way.
+    for later in (timedelta(minutes=10, seconds=15), timedelta(minutes=10, seconds=59)):
+        assert boot_time(uptime + timedelta(minutes=10), now + later, first) == first
+
+
+def test_boot_time_moves_once_past_a_minute() -> None:
+    pinned = datetime(2026, 11, 9, 2, 22)
+    assert boot_time(timedelta(minutes=10), datetime(2026, 11, 9, 2, 33), pinned) == pinned
+    later = boot_time(timedelta(minutes=10), datetime(2026, 11, 9, 2, 34), pinned)
+    assert later == datetime(2026, 11, 9, 2, 24)
+
+
+def test_boot_time_follows_a_restart() -> None:
+    first = boot_time(timedelta(days=78), datetime(2026, 11, 10, 9, 40))
+    restarted = boot_time(timedelta(minutes=5), datetime(2026, 11, 10, 10, 0), first)
+    assert restarted == datetime(2026, 11, 10, 9, 55)
 
 
 def test_disk_drops_empty_partitions() -> None:

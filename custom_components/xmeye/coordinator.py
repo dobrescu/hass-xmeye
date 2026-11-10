@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
@@ -19,6 +19,7 @@ from .const import (
     CONF_CHANNELS,
     CONF_SCAN_INTERVAL,
     DEFAULT_SCAN_INTERVAL,
+    DETECT_SECTIONS,
     DOMAIN,
 )
 from .ptz import PtzControl
@@ -31,6 +32,7 @@ from .xmeyelib import (
     WorkState,
     XmeyeClient,
     XmeyeError,
+    boot_time,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ class XmeyeData:
     archive_from: datetime | None = None
     archive_to: datetime | None = None
     capabilities: dict[str, Any] = field(default_factory=dict)
+    detect: dict[str, Any] = field(default_factory=dict)
     available: bool = True
 
     def channel_name(self, index: int) -> str:
@@ -74,10 +77,16 @@ class XmeyeData:
         return bool(self.state and self.state.video_motion >> index & 1)
 
     def video_loss_on(self, index: int) -> bool:
-        return bool(self.state and self.state.video_loss >> index & 1)
+        return bool(self.state and self.state.video_lost(index))
 
     def blind_on(self, index: int) -> bool:
         return bool(self.state and self.state.video_blind >> index & 1)
+
+    def detect_enabled(self, section: str, index: int) -> bool | None:
+        config = self.detect.get(section)
+        if isinstance(config, list) and index < len(config) and isinstance(config[index], dict):
+            return bool(config[index].get("Enable"))
+        return None
 
     def is_recording(self, index: int) -> bool:
         if not self.state or index >= len(self.state.channels):
@@ -112,6 +121,7 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
         self.client = client
         self._slow_due = datetime.min
         self._static: dict[str, Any] = {}
+        self._booted_at: datetime | None = None
         #: Guards the control session against concurrent calls from services and panel.
         self.lock = asyncio.Lock()
         #: Pan, tilt and zoom from the panel, on a connection of its own.
@@ -125,14 +135,14 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
 
     @property
     def enabled_channels(self) -> list[int]:
-        """Channels chosen in the options, or every connected one."""
+        """Channels chosen in the options, or every one enabled by default."""
         configured = self.config_entry.options.get(CONF_CHANNELS)
         if configured:
             return [int(c) for c in configured]
         if self.data:
-            online = [c.index for c in self.data.channels if c.online]
-            if online:
-                return online
+            chosen = [c.index for c in self.data.channels if c.default_enabled]
+            if chosen:
+                return chosen
         return [0]
 
     async def _async_update_data(self) -> XmeyeData:
@@ -151,19 +161,21 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
         if refresh_slow:
             # Model, channel names and capabilities only change after a firmware update.
             device = await self.client.device_info()
-            # Uptime only refreshes with the slow data and counts whole minutes, so pin
-            # the boot time here: recomputed per poll it would change on every update.
-            booted_at = (
-                (dt_util.utcnow() - device.uptime).replace(second=0, microsecond=0)
-                if device.uptime
-                else None
-            )
             self._static = {
                 "device": device,
                 "titles": await self.client.channel_titles(),
                 "capabilities": await self.client.capabilities(),
-                "booted_at": booted_at,
+                "detect": {
+                    section: await self._read_detect(section)
+                    for section, _ in DETECT_SECTIONS.values()
+                },
             }
+            # Pinned: DeviceRunTime has minute resolution.
+            self._booted_at = (
+                boot_time(device.uptime, dt_util.utcnow(), self._booted_at)
+                if device.uptime
+                else None
+            )
             self._slow_due = now + SLOW_REFRESH
 
         state = await self.client.work_state()
@@ -179,7 +191,8 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
             device=self._static["device"],
             titles=self._static["titles"],
             capabilities=self._static["capabilities"],
-            booted_at=self._static["booted_at"],
+            detect=self._static["detect"],
+            booted_at=self._booted_at,
             channels=channels,
             state=state,
             disks=disks,
@@ -188,6 +201,25 @@ class XmeyeCoordinator(DataUpdateCoordinator[XmeyeData]):
             archive_to=max(ends) if ends else None,
         )
 
+
+    async def _read_detect(self, section: str) -> Any:
+        # Some firmware never answers a section it lacks; that must not fail the whole update.
+        try:
+            return await self.client.get_config(section, check=False)
+        except XmeyeError as err:
+            _LOGGER.debug("Could not read %s: %s", section, err)
+            return self._static.get("detect", {}).get(section)
+
+    async def async_refresh_config(self) -> None:
+        """Refresh now, the slow data included: a configuration write can change it."""
+        self._slow_due = datetime.min
+        await self.async_request_refresh()
+
+    @callback
+    def async_set_detect(self, section: str, config: Any) -> None:
+        """Take a detector section just written to the recorder."""
+        self._static["detect"] = {**self._static["detect"], section: config}
+        self.async_set_updated_data(replace(self.data, detect=self._static["detect"]))
 
     def _flag_new_channels(self, channels: list[ChannelStatus]) -> None:
         """Point out cameras the recorder has but the options do not.

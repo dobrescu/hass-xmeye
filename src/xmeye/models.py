@@ -112,7 +112,7 @@ class DeviceInfo:
             device_type=data.get("DeviceType", 0),
             # HVR and NVR report the channel count in DigChannel, DVR in VideoInChannel
             channels=data.get("DigChannel") or data.get("VideoInChannel") or 0,
-            analog_only=not data.get("DigChannel"),
+            analog_only=not data.get("DigChannel") and bool(data.get("VideoInChannel")),
             extra_channels=data.get("ExtraChannel", 0),
             video_out_channels=data.get("VideoOutChannel", 0),
             audio_in_channels=data.get("AudioInChannel", 0),
@@ -139,6 +139,7 @@ class ChannelStatus:
     current_resolution: str = ""
     max_resolution: str = ""
     raw: dict[str, Any] = field(default_factory=dict)
+    analog: bool = False
 
     @classmethod
     def from_raw(cls, index: int, data: dict[str, Any]) -> ChannelStatus:
@@ -154,11 +155,16 @@ class ChannelStatus:
     @classmethod
     def from_video_signal(cls, index: int, signal: bool) -> ChannelStatus:
         """An analog input, judged by the recorder's video-loss alarm."""
-        return cls(index=index, status="Connected" if signal else "VideoLoss")
+        return cls(index=index, status="Connected" if signal else "VideoLoss", analog=True)
 
     @property
     def online(self) -> bool:
         return self.status == "Connected"
+
+    @property
+    def default_enabled(self) -> bool:
+        """Analog inputs always, even in video loss; IP channels only when connected."""
+        return self.online or self.analog
 
     @property
     def configured(self) -> bool:
@@ -206,6 +212,9 @@ class WorkState:
             video_motion=parse_hex_int(alarm.get("VideoMotion")),
             raw=data,
         )
+
+    def video_lost(self, index: int) -> bool:
+        return bool(self.video_loss >> index & 1)
 
     def motion_channels(self) -> list[int]:
         """Indices of channels currently reporting motion."""
@@ -442,3 +451,16 @@ __all__ = [
     "parse_hex_ip",
     "parse_time",
 ]
+
+
+def boot_time(uptime: timedelta, now: datetime, previous: datetime | None = None) -> datetime:
+    """When the recorder started, to the minute.
+
+    ``DeviceRunTime`` counts whole minutes, so each estimate lands somewhere in
+    the minute after the real start. Keep ``previous`` unless the estimate moved
+    further than that, which a restart does.
+    """
+    estimate = (now - uptime).replace(second=0, microsecond=0)
+    if previous is not None and abs(estimate - previous) <= timedelta(minutes=1):
+        return previous
+    return estimate

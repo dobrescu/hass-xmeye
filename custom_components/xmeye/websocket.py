@@ -12,6 +12,7 @@ from homeassistant.components import websocket_api
 from homeassistant.components.http.auth import async_sign_path
 from homeassistant.const import __version__ as HA_VERSION
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_DEFAULT_LIVE_STREAM,
@@ -206,9 +207,9 @@ async def ws_config_set(
         connection.send_error(msg["id"], "write_failed", str(err))
         return
 
-    # Settings like the channel titles or the recording mode change what the
-    # entities report, so the next poll should not wait out the interval.
-    await coordinator.async_request_refresh()
+    # Settings like the channel titles or the detectors change what the entities
+    # report, so they should not wait out the interval.
+    await coordinator.async_refresh_config()
     # A value taken for after a restart reads back as the old one until then,
     # so the panel must not call it rejected; it is told which it was.
     connection.send_result(
@@ -426,7 +427,9 @@ async def ws_device_detail(
                 "build_time": _iso(data.device.build_time),
                 "channels": data.device.channels,
                 "uptime_seconds": (
-                    int(data.device.uptime.total_seconds()) if data.device.uptime else None
+                    int((dt_util.utcnow() - data.booted_at).total_seconds())
+                    if data.booted_at
+                    else None
                 ),
                 "supports_talk": data.device.supports_talk,
                 "device_time": _iso(data.device_time),

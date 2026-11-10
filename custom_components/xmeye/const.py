@@ -105,3 +105,10 @@ EVENT_LABELS: Final = {
     "alarm": "Alarm",
     "manual": "Manual",
 }
+
+#: Detector sections, each a per-channel array with ``Enable``: key -> (section, translation key).
+DETECT_SECTIONS: Final = {
+    "motion_detect": ("Detect.MotionDetect", "channel_motion_detect"),
+    "blind_detect": ("Detect.BlindDetect", "channel_blind_detect"),
+    "loss_detect": ("Detect.LossDetect", "channel_loss_detect"),
+}

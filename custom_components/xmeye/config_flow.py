@@ -100,7 +100,7 @@ async def _async_probe(data: dict[str, Any]) -> dict[str, Any]:
     return {
         "serial": info.serial_number,
         "model": info.hardware,
-        "channels": [c.index for c in channels if c.online] or [0],
+        "channels": [c.index for c in channels if c.default_enabled] or [0],
         "channel_count": info.channels,
     }
 

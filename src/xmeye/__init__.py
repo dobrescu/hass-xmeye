@@ -43,6 +43,7 @@ from .models import (
     RecordFile,
     User,
     WorkState,
+    boot_time,
 )
 from .protocol import DvripConnection, Packet, sofia_hash
 from .stream import ArchiveStream, LiveStream, TalkStream
@@ -62,6 +63,7 @@ __all__ = [
     "FrameDemuxer",
     "ArchiveStream",
     "DEFAULT_PORT",
+    "boot_time",
     "ChannelState",
     "ChannelStatus",
     "CommandFailed",

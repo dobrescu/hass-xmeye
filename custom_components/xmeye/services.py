@@ -215,7 +215,7 @@ async def async_setup_services(hass: HomeAssistant) -> None:
                 )
         except XmeyeError as err:
             raise HomeAssistantError(f"Could not write the section: {err}") from err
-        await coordinator.async_request_refresh()
+        await coordinator.async_refresh_config()
 
     async def handle_talk(call: ServiceCall) -> None:
         coordinator = _coordinator(hass, call)
